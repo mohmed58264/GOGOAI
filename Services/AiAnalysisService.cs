@@ -21,6 +21,9 @@ public class AiAnalysisService
             .Where(u => u.Role == "provider")
             .ToListAsync();
 
+        var week = ISOWeek.GetWeekOfYear(DateTime.UtcNow);
+        var year = DateTime.UtcNow.Year;
+
         foreach (var provider in providers)
         {
             var orders = await _db.Orders
@@ -38,18 +41,30 @@ public class AiAnalysisService
             if (completed >= 10 && avgRating >= 4.5) rank = "pro";
             if (completed >= 20 && avgRating >= 4.8) rank = "elite";
 
-            var perf = new ProviderPerformance
-            {
-                Id = Guid.NewGuid(),
-                ProviderId = provider.Id,
-                CompletedOrders = completed,
-                AverageRating = avgRating,
-                WeekNumber = ISOWeek.GetWeekOfYear(DateTime.UtcNow),
-                Year = DateTime.UtcNow.Year,
-                Rank = rank
-            };
+            var existingPerf = await _db.ProviderPerformances
+                .FirstOrDefaultAsync(p => p.ProviderId == provider.Id && p.WeekNumber == week && p.Year == year);
 
-            _db.ProviderPerformances.Add(perf);
+            if (existingPerf != null)
+            {
+                existingPerf.CompletedOrders = completed;
+                existingPerf.AverageRating = avgRating;
+                existingPerf.Rank = rank;
+                existingPerf.CalculatedAt = DateTime.UtcNow;
+            }
+            else
+            {
+                var newPerf = new ProviderPerformance
+                {
+                    Id = Guid.NewGuid(),
+                    ProviderId = provider.Id,
+                    CompletedOrders = completed,
+                    AverageRating = avgRating,
+                    WeekNumber = week,
+                    Year = year,
+                    Rank = rank
+                };
+                _db.ProviderPerformances.Add(newPerf);
+            }
         }
 
         await _db.SaveChangesAsync();
